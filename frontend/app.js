@@ -8,6 +8,8 @@ const registerBtn = document.getElementById("registerBtn");
 connectBtn.onclick = connectWallet;
 
 async function connectWallet() {
+  resetUI();
+
   if (!window.ethereum) {
     alert("MetaMask not found");
     return;
@@ -30,6 +32,9 @@ async function connectWallet() {
   window.contract = contract;
   window.account = account;
 
+  document.getElementById("connectBtn").style.display = "none";
+  logoutBtn.style.display = "inline";
+  
   checkRegistration();
 }
 
@@ -85,4 +90,27 @@ function showHomepage(user) {
     `Name: ${user.name}
 Role: ${roleText}
 Reputation: ${user.reputation}`;
+}
+
+// logout
+const logoutBtn = document.getElementById("logoutBtn");
+
+logoutBtn.onclick = logout;
+
+function resetUI() {
+  document.getElementById("registration").style.display = "none";
+  document.getElementById("homepage").style.display = "none";
+  document.getElementById("wallet").innerText = "";
+
+  account = null;
+  contract = null;
+}
+
+function logout() {
+  resetUI();
+
+  document.getElementById("connectBtn").style.display = "inline";
+  logoutBtn.style.display = "none";
+
+  alert("Logged out. You can switch accounts and reconnect.");
 }
