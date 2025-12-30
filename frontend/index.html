@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Freelance Marketplace</title>
+  <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+  <script src="./abi.js"></script>
+  <script defer src="./app.js"></script>
+</head>
+
+<body>
+  <h2>Freelance Marketplace DApp</h2>
+
+  <!-- Wallet -->
+  <button id="connectBtn">Connect Wallet</button>
+  <p id="wallet"></p>
+
+  <!-- Registration -->
+  <div id="registration" style="display:none;">
+    <h3>Register</h3>
+
+    <select id="role">
+      <option value="">Select Role</option>
+      <option value="client">Client</option>
+      <option value="freelancer">Freelancer</option>
+    </select>
+
+    <br><br>
+
+    <input type="text" id="name" placeholder="Enter your name" />
+
+    <br><br>
+
+    <button id="registerBtn">Register</button>
+  </div>
+
+  <!-- Homepage -->
+  <div id="homepage" style="display:none;">
+    <h3>Welcome</h3>
+    <p id="userInfo"></p>
+  </div>
+
+</body>
+</html>
