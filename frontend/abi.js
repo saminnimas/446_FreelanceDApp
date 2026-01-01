@@ -612,4 +612,17 @@ const CONTRACT_ABI = [
   }
 ];
 
-const CONTRACT_ADDRESS = "0x4DCb955f1932EA04DF37ac8a46A816bdd518955e";
+(async () => {
+  try {
+    const resp = await fetch('/build/contracts/FreelanceMarketplace.json');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const networks = data.networks || {};
+    const addr = networks['5777']?.address || networks[5777]?.address || Object.values(networks)[0]?.address || null;
+    window.CONTRACT_ADDRESS = addr;
+    console.log('Using contract address:', window.CONTRACT_ADDRESS);
+  } catch (e) {
+    console.warn('Failed to load contract address:', e);
+    window.CONTRACT_ADDRESS = null;
+  }
+})();

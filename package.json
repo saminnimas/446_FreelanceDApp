@@ -1,0 +1,9 @@
+{
+  "name": "freelance-dapp",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node temp.js"
+  }
+}
