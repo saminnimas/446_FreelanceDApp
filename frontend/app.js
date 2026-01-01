@@ -5,6 +5,8 @@ let account;
 const connectBtn = document.getElementById("connectBtn");
 const registerBtn = document.getElementById("registerBtn");
 
+
+// CONNECTING WALLET
 connectBtn.onclick = connectWallet;
 
 async function connectWallet() {
@@ -38,6 +40,8 @@ async function connectWallet() {
   checkRegistration();
 }
 
+
+// CHECK REGISTRATION
 async function checkRegistration() {
   const user = await contract.methods.users(account).call();
 
@@ -48,7 +52,7 @@ async function checkRegistration() {
   }
 }
 
-
+// USER REGISTRATION
 registerBtn.onclick = registerUser;
 
 async function registerUser() {
@@ -76,7 +80,7 @@ async function registerUser() {
   location.reload();
 }
 
-
+// HOMEPAGE
 function showHomepage(user) {
   document.getElementById("registration").style.display = "none";
   document.getElementById("homepage").style.display = "block";
@@ -90,9 +94,56 @@ function showHomepage(user) {
     `Name: ${user.name}
 Role: ${roleText}
 Reputation: ${user.reputation}`;
+
+  // Client-only UI
+  if (user.role == 1) {
+    document.getElementById("clientSection").style.display = "block";
+    loadClientJobs();
+  }
 }
 
-// logout
+// JOB POSTING (CLIENT)
+document.getElementById("postJobBtn").onclick = postJob;
+
+async function postJob() {
+  const title = document.getElementById("jobTitle").value;
+  const category = document.getElementById("jobCategory").value;
+  const budget = document.getElementById("jobBudget").value;
+  const deadline = document.getElementById("jobDeadline").value;
+
+  if (!title || !category || !budget || !deadline) {
+    alert("All fields required");
+    return;
+  }
+
+  await contract.methods
+    .postJob(title, category, budget, deadline)
+    .send({ from: account });
+
+  alert("Job posted!");
+  loadClientJobs();
+}
+
+// LOADing CLIENT JOBS
+async function loadClientJobs() {
+  const jobList = document.getElementById("jobList");
+  jobList.innerHTML = "";
+
+  const count = await contract.methods.jobCount().call();
+
+  for (let i = 1; i <= count; i++) {
+    const job = await contract.methods.jobs(i).call();
+
+    if (job.client.toLowerCase() === account.toLowerCase()) {
+      const li = document.createElement("li");
+      li.innerText = `#${job.id}: ${job.title} | Budget: ${job.maxBudget}`;
+      jobList.appendChild(li);
+    }
+  }
+}
+
+
+// LOGOUT
 const logoutBtn = document.getElementById("logoutBtn");
 
 logoutBtn.onclick = logout;
