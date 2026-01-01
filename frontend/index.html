@@ -40,22 +40,24 @@
   <div id="homepage" style="display:none;">
     <h3>Welcome</h3>
     <p id="userInfo"></p>
+
+    <!-- Client Job Posting -->
+    <div id="clientSection" style="display:none;">
+      <h3>Post a Job</h3>
+  
+      <input type="text" id="jobTitle" placeholder="Job Title" /><br><br>
+      <input type="text" id="jobCategory" placeholder="Category" /><br><br>
+      <input type="number" id="jobBudget" placeholder="Budget (wei)" /><br><br>
+      <input type="number" id="jobDeadline" placeholder="Deadline (unix timestamp)" /><br><br>
+  
+      <button id="postJobBtn">Post Job</button>
+  
+      <h4>Your Jobs</h4>
+      <ul id="jobList"></ul>
+    </div>
+    
   </div>
 
-  <!-- Client Job Posting -->
-  <div id="clientSection" style="display:none;">
-    <h3>Post a Job</h3>
-
-    <input type="text" id="jobTitle" placeholder="Job Title" /><br><br>
-    <input type="text" id="jobCategory" placeholder="Category" /><br><br>
-    <input type="number" id="jobBudget" placeholder="Budget (wei)" /><br><br>
-    <input type="number" id="jobDeadline" placeholder="Deadline (unix timestamp)" /><br><br>
-
-    <button id="postJobBtn">Post Job</button>
-
-    <h4>Your Jobs</h4>
-    <ul id="jobList"></ul>
-  </div>
 
 
 </body>

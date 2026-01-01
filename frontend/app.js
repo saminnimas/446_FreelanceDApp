@@ -82,6 +82,8 @@ async function registerUser() {
 
 // HOMEPAGE
 function showHomepage(user) {
+  resetClientSection();
+  
   document.getElementById("registration").style.display = "none";
   document.getElementById("homepage").style.display = "block";
 
@@ -102,27 +104,57 @@ Reputation: ${user.reputation}`;
   }
 }
 
+// RESET JOB FORM (soft refreshing to apply logout logic)
+function resetJobForm() {
+  document.getElementById("jobTitle").value = "";
+  document.getElementById("jobCategory").value = "";
+  document.getElementById("jobBudget").value = "";
+  document.getElementById("jobDeadline").value = "";
+}
+
+function resetClientSection() {
+  document.getElementById("clientSection").style.display = "none";
+  document.getElementById("jobList").innerHTML = "";
+  resetJobForm();
+}
+
+
+// CLEAR JOB LIST
+function clearClientUI() {
+  const section = document.getElementById("clientSection");
+  section.innerHTML = "";
+}
+
 // JOB POSTING (CLIENT)
 document.getElementById("postJobBtn").onclick = postJob;
 
 async function postJob() {
-  const title = document.getElementById("jobTitle").value;
-  const category = document.getElementById("jobCategory").value;
-  const budget = document.getElementById("jobBudget").value;
-  const deadline = document.getElementById("jobDeadline").value;
+  const btn = document.getElementById("postJobBtn");
+  btn.disabled = true;
 
-  if (!title || !category || !budget || !deadline) {
-    alert("All fields required");
-    return;
+  try {
+    const title = document.getElementById("jobTitle").value;
+    const category = document.getElementById("jobCategory").value;
+    const budget = document.getElementById("jobBudget").value;
+    const deadline = document.getElementById("jobDeadline").value;
+  
+    if (!title || !category || !budget || !deadline) {
+      alert("All fields required");
+      return;
+    }
+  
+    await contract.methods
+      .postJob(title, category, budget, deadline)
+      .send({ from: account });
+  
+    alert("Job posted!");
+    resetJobForm();
+    loadClientJobs();
+  } finally {
+    btn.disabled = false;
   }
-
-  await contract.methods
-    .postJob(title, category, budget, deadline)
-    .send({ from: account });
-
-  alert("Job posted!");
-  loadClientJobs();
 }
+
 
 // LOADing CLIENT JOBS
 async function loadClientJobs() {
@@ -152,6 +184,8 @@ function resetUI() {
   document.getElementById("registration").style.display = "none";
   document.getElementById("homepage").style.display = "none";
   document.getElementById("wallet").innerText = "";
+
+  resetClientSection(); 
 
   account = null;
   contract = null;
