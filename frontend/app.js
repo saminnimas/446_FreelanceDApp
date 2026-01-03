@@ -665,7 +665,7 @@ function renderJobMarketplaceTable(container) {
         <td>${budgetEth}</td>
         <td>${deadlineDate}</td>
         <td title="${job.client}">${shortClient}</td>
-        <td><button class="btn btn-primary btn-small" onclick="openBidModal(${JSON.stringify(job).replace(/"/g, '&quot;')})">Place Bid</button></td>
+        <td><button class="btn btn-primary btn-small" onclick="openBidModalWithJobId(${job.id})">Place Bid</button></td>
       </tr>
     `;
   });
@@ -709,6 +709,16 @@ function createFreelancerJobCard(job) {
   card.appendChild(bidBtn);
 
   return card;
+}
+
+// Open bid modal by job ID
+async function openBidModalWithJobId(jobId) {
+  const job = paginationState.jobMarketplace.allJobs.find(j => j.id == jobId);
+  if (job) {
+    await openBidModal(job);
+  } else {
+    alert("Job not found");
+  }
 }
 
 // Open bid modal
@@ -769,7 +779,7 @@ async function placeBid() {
       .send({ from: account });
 
     alert("Bid placed successfully!");
-    document.getElementById("bidModal").style.display = "none";
+    document.getElementById("bidModal").classList.remove("show");
     await loadJobMarketplace();
   } catch (error) {
     console.error(error);
