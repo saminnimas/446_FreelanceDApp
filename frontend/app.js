@@ -10,6 +10,7 @@ let refreshTimeouts = {
   clientJobs: null,
   jobMarketplace: null,
   freelancerJobs: null,
+  arbiterJobs: null,
   disputedJobs: null,
   platformFees: null
 };
@@ -19,6 +20,7 @@ let refreshInProgress = {
   clientJobs: false,
   jobMarketplace: false,
   freelancerJobs: false,
+  arbiterJobs: false,
   disputedJobs: false,
   platformFees: false
 };
@@ -28,10 +30,11 @@ let eventSubscriptions = [];
 
 // Pagination tracking
 let paginationState = {
-  clientJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0, allJobs: [] },
-  jobMarketplace: { currentPage: 1, itemsPerPage: 8, totalItems: 0, allJobs: [] },
-  freelancerJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0, allJobs: [] },
-  disputedJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0, allJobs: [] }
+  clientJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0, allJobs: [], sorted: false },
+  jobMarketplace: { currentPage: 1, itemsPerPage: 8, totalItems: 0, allJobs: [], sorted: false },
+  freelancerJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0, allJobs: [], sorted: false },
+  arbiterJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0, allJobs: [], sorted: false },
+  disputedJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0, allJobs: [], sorted: false }
 };
 
 const connectBtn = document.getElementById("connectBtn");
@@ -244,10 +247,11 @@ async function loadClientJobs() {
       }
     }
 
-    // Update pagination state
+    // Update pagination state (no automatic sorting)
     paginationState.clientJobs.allJobs = clientJobsData;
     paginationState.clientJobs.totalItems = clientJobsData.length;
     paginationState.clientJobs.currentPage = 1;
+    paginationState.clientJobs.sorted = false;
 
     // Render the table with pagination
     renderClientJobsTable(jobsList);
@@ -370,6 +374,8 @@ function goToPage(paginationKey, pageNum) {
     renderJobMarketplaceTable(document.getElementById('jobMarketplace'));
   } else if (paginationKey === 'freelancerJobs') {
     renderFreelancerJobsTable(document.getElementById('freelancerMyJobs'));
+  } else if (paginationKey === 'arbiterJobs') {
+    renderArbiterJobsTable(document.getElementById('arbiterJobsList'));
   } else if (paginationKey === 'disputedJobs') {
     renderDisputedJobsTable(document.getElementById('disputedJobsList'));
   }
@@ -605,15 +611,11 @@ async function loadJobMarketplace() {
       filteredJobs = openJobs.filter(job => job.category === selectedCategory);
     }
 
-    // Sort by highest budget first
-    filteredJobs.sort((a, b) => {
-      return parseFloat(b.maxBudget) - parseFloat(a.maxBudget);
-    });
-
-    // Update pagination state
+    // Update pagination state (no automatic sorting)
     paginationState.jobMarketplace.allJobs = filteredJobs;
     paginationState.jobMarketplace.totalItems = filteredJobs.length;
     paginationState.jobMarketplace.currentPage = 1;
+    paginationState.jobMarketplace.sorted = false;
 
     if (filteredJobs.length === 0) {
       marketplace.innerHTML = '<p class="empty-state">No jobs found for selected category</p>';
@@ -801,10 +803,11 @@ async function loadFreelancerJobs() {
       }
     }
 
-    // Update pagination state
+    // Update pagination state (no automatic sorting)
     paginationState.freelancerJobs.allJobs = myJobs;
     paginationState.freelancerJobs.totalItems = myJobs.length;
     paginationState.freelancerJobs.currentPage = 1;
+    paginationState.freelancerJobs.sorted = false;
 
     if (myJobs.length === 0) {
       myJobsList.innerHTML = '<p class="empty-state">No active jobs</p>';
@@ -928,6 +931,9 @@ async function loadArbiterDashboard() {
   // Load platform fees
   await loadPlatformFees();
 
+  // Load all jobs (read-only view)
+  await loadArbiterJobsList();
+
   // Load disputed jobs
   await loadDisputedJobs();
 
@@ -1007,10 +1013,11 @@ async function loadDisputedJobs() {
       }
     }
 
-    // Update pagination state
+    // Update pagination state (no automatic sorting)
     paginationState.disputedJobs.allJobs = disputedJobs;
     paginationState.disputedJobs.totalItems = disputedJobs.length;
     paginationState.disputedJobs.currentPage = 1;
+    paginationState.disputedJobs.sorted = false;
 
     if (disputedJobs.length === 0) {
       disputedList.innerHTML = '<p class="empty-state">No disputed jobs</p>';
@@ -1078,6 +1085,104 @@ function renderDisputedJobsTable(container) {
   const totalPages = Math.ceil(state.totalItems / state.itemsPerPage);
   if (totalPages > 1) {
     html += createPaginationControls('disputedJobs', state.currentPage, totalPages);
+  }
+
+  container.innerHTML = html;
+}
+
+// Load all jobs for arbiter view
+async function loadArbiterJobsList() {
+  // Prevent simultaneous refreshes
+  if (refreshInProgress.arbiterJobs) {
+    console.log('Arbiter jobs refresh already in progress, skipping...');
+    return;
+  }
+
+  refreshInProgress.arbiterJobs = true;
+
+  try {
+    const jobCount = await contract.methods.jobCount().call();
+    const arbiterJobsContainer = document.getElementById("arbiterJobsList");
+    arbiterJobsContainer.innerHTML = "";
+
+    const allArbiterJobs = [];
+
+    // Load all jobs (arbiter can see everything)
+    for (let i = 1; i <= jobCount; i++) {
+      const job = await contract.methods.jobs(i).call();
+      allArbiterJobs.push({ ...job, id: i });
+    }
+
+    // Update pagination state (no automatic sorting)
+    paginationState.arbiterJobs.allJobs = allArbiterJobs;
+    paginationState.arbiterJobs.totalItems = allArbiterJobs.length;
+    paginationState.arbiterJobs.currentPage = 1;
+    paginationState.arbiterJobs.sorted = false;
+
+    if (allArbiterJobs.length === 0) {
+      arbiterJobsContainer.innerHTML = '<p class="empty-state">No jobs available</p>';
+      return;
+    }
+
+    // Render the table with pagination
+    renderArbiterJobsTable(arbiterJobsContainer);
+  } finally {
+    refreshInProgress.arbiterJobs = false;
+  }
+}
+
+// Render arbiter jobs table with pagination
+function renderArbiterJobsTable(container) {
+  const state = paginationState.arbiterJobs;
+  const allJobs = state.allJobs;
+  const start = (state.currentPage - 1) * state.itemsPerPage;
+  const end = start + state.itemsPerPage;
+  const paginatedJobs = allJobs.slice(start, end);
+
+  let html = `
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Job Title</th>
+            <th>Category</th>
+            <th>Budget (ETH)</th>
+            <th>Deadline</th>
+            <th>Client</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  paginatedJobs.forEach(job => {
+    const maxBudgetEth = web3.utils.fromWei(job.maxBudget, "ether");
+    const shortClient = job.client.substring(0, 10) + "...";
+    const statusText = getStatusText(job.status);
+    const deadline = new Date(parseInt(job.deadline) * 1000).toLocaleDateString();
+
+    html += `
+      <tr>
+        <td><strong>${job.title}</strong></td>
+        <td>${job.category}</td>
+        <td>${maxBudgetEth}</td>
+        <td>${deadline}</td>
+        <td title="${job.client}">${shortClient}</td>
+        <td><span class="job-status status-${statusText.toLowerCase()}">${statusText}</span></td>
+      </tr>
+    `;
+  });
+
+  html += `
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  // Add pagination controls
+  const totalPages = Math.ceil(state.totalItems / state.itemsPerPage);
+  if (totalPages > 1) {
+    html += createPaginationControls('arbiterJobs', state.currentPage, totalPages);
   }
 
   container.innerHTML = html;
@@ -1263,4 +1368,96 @@ function setupEventListeners() {
 function getStatusText(status) {
   const statuses = ["Open", "InProgress", "Completed", "Closed", "Disputed", "Resolved"];
   return statuses[status] || "Unknown";
+}
+
+// SORTING FUNCTIONS (triggered by buttons)
+
+// Sort client jobs by highest budget (toggle)
+function sortClientJobsByBudget() {
+  const state = paginationState.clientJobs;
+  
+  if (state.sorted) {
+    // Undo sort - reload original data
+    loadClientJobs();
+  } else {
+    // Apply sort
+    state.allJobs.sort((a, b) => {
+      return parseFloat(b.maxBudget) - parseFloat(a.maxBudget);
+    });
+    state.sorted = true;
+    state.currentPage = 1;
+    renderClientJobsTable(document.getElementById('clientJobsList'));
+  }
+}
+
+// Sort freelancer marketplace by highest budget (toggle)
+function sortMarketplaceByBudget() {
+  const state = paginationState.jobMarketplace;
+  
+  if (state.sorted) {
+    // Undo sort - reload original data
+    loadJobMarketplace();
+  } else {
+    // Apply sort
+    state.allJobs.sort((a, b) => {
+      return parseFloat(b.maxBudget) - parseFloat(a.maxBudget);
+    });
+    state.sorted = true;
+    state.currentPage = 1;
+    renderJobMarketplaceTable(document.getElementById('jobMarketplace'));
+  }
+}
+
+// Sort freelancer my jobs by highest amount (toggle)
+function sortFreelancerJobsByAmount() {
+  const state = paginationState.freelancerJobs;
+  
+  if (state.sorted) {
+    // Undo sort - reload original data
+    loadFreelancerJobs();
+  } else {
+    // Apply sort
+    state.allJobs.sort((a, b) => {
+      return parseFloat(b.agreedAmount) - parseFloat(a.agreedAmount);
+    });
+    state.sorted = true;
+    state.currentPage = 1;
+    renderFreelancerJobsTable(document.getElementById('freelancerMyJobs'));
+  }
+}
+
+// Sort arbiter all jobs by highest budget (toggle)
+function sortArbiterJobsByBudget() {
+  const state = paginationState.arbiterJobs;
+  
+  if (state.sorted) {
+    // Undo sort - reload original data
+    loadArbiterJobsList();
+  } else {
+    // Apply sort
+    state.allJobs.sort((a, b) => {
+      return parseFloat(b.maxBudget) - parseFloat(a.maxBudget);
+    });
+    state.sorted = true;
+    state.currentPage = 1;
+    renderArbiterJobsTable(document.getElementById('arbiterJobsList'));
+  }
+}
+
+// Sort disputed jobs by highest amount (toggle)
+function sortDisputedJobsByAmount() {
+  const state = paginationState.disputedJobs;
+  
+  if (state.sorted) {
+    // Undo sort - reload original data
+    loadDisputedJobs();
+  } else {
+    // Apply sort
+    state.allJobs.sort((a, b) => {
+      return parseFloat(b.agreedAmount) - parseFloat(a.agreedAmount);
+    });
+    state.sorted = true;
+    state.currentPage = 1;
+    renderDisputedJobsTable(document.getElementById('disputedJobsList'));
+  }
 }
