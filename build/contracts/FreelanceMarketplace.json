@@ -42795,12 +42795,12 @@
     "5777": {
       "events": {},
       "links": {},
-      "address": "0x4DCb955f1932EA04DF37ac8a46A816bdd518955e",
-      "transactionHash": "0xd7b991d057680fb31c62c29c74cb40c17407d633d83691836421349b4cb41584"
+      "address": "0x8541DE269475821ecBf61Ac3872c3894eAf13Bd6",
+      "transactionHash": "0xf072221d6118de2e9541d0eece62fe1230834d084659f59ced2a6efe4020a3fd"
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-12-30T04:11:57.153Z",
+  "updatedAt": "2025-12-30T05:22:36.652Z",
   "networkType": "ethereum",
   "devdoc": {
     "kind": "dev",
