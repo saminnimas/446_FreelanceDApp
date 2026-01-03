@@ -1,18 +1,37 @@
-// ============================================
-// GLOBAL VARIABLES
-// ============================================
 let web3;
 let contract;
 let account;
 let currentUserRole = null;
 
+let eventsInitialized = false;
+
+// Debounce timers to prevent rapid-fire event refreshes
+let refreshTimeouts = {
+  clientJobs: null,
+  jobMarketplace: null,
+  freelancerJobs: null,
+  disputedJobs: null,
+  platformFees: null
+};
+
+// Track if refresh is currently in progress
+let refreshInProgress = {
+  clientJobs: false,
+  jobMarketplace: false,
+  freelancerJobs: false,
+  disputedJobs: false,
+  platformFees: false
+};
+
+// Store event subscriptions for cleanup
+let eventSubscriptions = [];
+
 const connectBtn = document.getElementById("connectBtn");
 const registerBtn = document.getElementById("registerBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 
-// ============================================
-// WALLET CONNECTION (Existing Code)
-// ============================================
+
+// WALLET CONNECTION
 connectBtn.onclick = connectWallet;
 
 async function connectWallet() {
@@ -42,9 +61,7 @@ async function connectWallet() {
   checkRegistration();
 }
 
-// ============================================
-// REGISTRATION CHECK (Existing Code)
-// ============================================
+// REGISTRATION CHECK
 async function checkRegistration() {
   const user = await contract.methods.users(account).call();
 
@@ -56,9 +73,7 @@ async function checkRegistration() {
   }
 }
 
-// ============================================
-// USER REGISTRATION (Existing Code)
-// ============================================
+// USER REGISTRATION
 registerBtn.onclick = registerUser;
 
 async function registerUser() {
@@ -87,9 +102,7 @@ async function registerUser() {
   }
 }
 
-// ============================================
 // ROLE-BASED DASHBOARD DISPLAY
-// ============================================
 function showRoleBasedDashboard(user) {
   document.getElementById("registration").style.display = "none";
   document.getElementById("homepage").style.display = "block";
@@ -121,9 +134,7 @@ function showRoleBasedDashboard(user) {
   setupEventListeners();
 }
 
-// ============================================
 // LOGOUT (Existing Code)
-// ============================================
 logoutBtn.onclick = logout;
 
 function resetUI() {
@@ -134,9 +145,13 @@ function resetUI() {
   document.getElementById("arbiterDashboard").style.display = "none";
   document.getElementById("wallet").innerText = "";
 
+  // Clean up event listeners
+  cleanupEventListeners();
+
   account = null;
   contract = null;
   currentUserRole = null;
+  eventsInitialized = false;
 }
 
 function logout() {
@@ -146,9 +161,7 @@ function logout() {
   alert("Logged out. You can switch accounts and reconnect.");
 }
 
-// ============================================
 // CLIENT DASHBOARD
-// ============================================
 async function loadClientDashboard() {
   // Post Job Button
   document.getElementById("postJobBtn").onclick = postJob;
@@ -196,23 +209,35 @@ async function postJob() {
 
 // Load all jobs posted by this client
 async function loadClientJobs() {
-  const jobCount = await contract.methods.jobCount().call();
-  const jobsList = document.getElementById("clientJobsList");
-  jobsList.innerHTML = "";
-
-  if (jobCount == 0) {
-    jobsList.innerHTML = '<p class="empty-state">No jobs posted yet</p>';
+  // Prevent simultaneous refreshes
+  if (refreshInProgress.clientJobs) {
+    console.log('Client jobs refresh already in progress, skipping...');
     return;
   }
 
-  for (let i = 1; i <= jobCount; i++) {
-    const job = await contract.methods.jobs(i).call();
+  refreshInProgress.clientJobs = true;
 
-    // Only show jobs posted by this client
-    if (job.client.toLowerCase() !== account.toLowerCase()) continue;
+  try {
+    const jobCount = await contract.methods.jobCount().call();
+    const jobsList = document.getElementById("clientJobsList");
+    jobsList.innerHTML = "";
 
-    const jobCard = createClientJobCard(job);
-    jobsList.appendChild(jobCard);
+    if (jobCount == 0) {
+      jobsList.innerHTML = '<p class="empty-state">No jobs posted yet</p>';
+      return;
+    }
+
+    for (let i = 1; i <= jobCount; i++) {
+      const job = await contract.methods.jobs(i).call();
+
+      // Only show jobs posted by this client
+      if (job.client.toLowerCase() !== account.toLowerCase()) continue;
+
+      const jobCard = createClientJobCard(job);
+      jobsList.appendChild(jobCard);
+    }
+  } finally {
+    refreshInProgress.clientJobs = false;
   }
 }
 
@@ -380,9 +405,8 @@ async function raiseDispute(jobId) {
   }
 }
 
-// ============================================
 // FREELANCER DASHBOARD
-// ============================================
+
 async function loadFreelancerDashboard() {
   // Load job marketplace
   await loadJobMarketplace();
@@ -396,49 +420,61 @@ async function loadFreelancerDashboard() {
 
 // Load and display job marketplace with filtering and sorting
 async function loadJobMarketplace() {
-  const jobCount = await contract.methods.jobCount().call();
-  const marketplace = document.getElementById("jobMarketplace");
-  marketplace.innerHTML = '<p class="loading">Loading jobs...</p>';
-
-  const selectedCategory = document.getElementById("categoryFilter").value;
-
-  if (jobCount == 0) {
-    marketplace.innerHTML = '<p class="empty-state">No jobs available</p>';
+  // Prevent simultaneous refreshes
+  if (refreshInProgress.jobMarketplace) {
+    console.log('Job marketplace refresh already in progress, skipping...');
     return;
   }
 
-  // Fetch all open jobs
-  const openJobs = [];
-  for (let i = 1; i <= jobCount; i++) {
-    const job = await contract.methods.jobs(i).call();
-    
-    // Only show Open status jobs
-    if (job.status == 0) {
-      openJobs.push(job);
+  refreshInProgress.jobMarketplace = true;
+
+  try {
+    const jobCount = await contract.methods.jobCount().call();
+    const marketplace = document.getElementById("jobMarketplace");
+    marketplace.innerHTML = '<p class="loading">Loading jobs...</p>';
+
+    const selectedCategory = document.getElementById("categoryFilter").value;
+
+    if (jobCount == 0) {
+      marketplace.innerHTML = '<p class="empty-state">No jobs available</p>';
+      return;
     }
-  }
 
-  // Filter by category
-  let filteredJobs = openJobs;
-  if (selectedCategory !== "all") {
-    filteredJobs = openJobs.filter(job => job.category === selectedCategory);
-  }
+    // Fetch all open jobs
+    const openJobs = [];
+    for (let i = 1; i <= jobCount; i++) {
+      const job = await contract.methods.jobs(i).call();
+      
+      // Only show Open status jobs
+      if (job.status == 0) {
+        openJobs.push(job);
+      }
+    }
 
-  // Sort by highest budget first
-  filteredJobs.sort((a, b) => {
-    return parseFloat(b.maxBudget) - parseFloat(a.maxBudget);
-  });
+    // Filter by category
+    let filteredJobs = openJobs;
+    if (selectedCategory !== "all") {
+      filteredJobs = openJobs.filter(job => job.category === selectedCategory);
+    }
 
-  marketplace.innerHTML = "";
+    // Sort by highest budget first
+    filteredJobs.sort((a, b) => {
+      return parseFloat(b.maxBudget) - parseFloat(a.maxBudget);
+    });
 
-  if (filteredJobs.length === 0) {
-    marketplace.innerHTML = '<p class="empty-state">No jobs found for selected category</p>';
-    return;
-  }
+    marketplace.innerHTML = "";
 
-  for (const job of filteredJobs) {
-    const jobCard = createFreelancerJobCard(job);
-    marketplace.appendChild(jobCard);
+    if (filteredJobs.length === 0) {
+      marketplace.innerHTML = '<p class="empty-state">No jobs found for selected category</p>';
+      return;
+    }
+
+    for (const job of filteredJobs) {
+      const jobCard = createFreelancerJobCard(job);
+      marketplace.appendChild(jobCard);
+    }
+  } finally {
+    refreshInProgress.jobMarketplace = false;
   }
 }
 
@@ -536,29 +572,41 @@ async function placeBid() {
 
 // Load jobs where freelancer is hired
 async function loadFreelancerJobs() {
-  const jobCount = await contract.methods.jobCount().call();
-  const myJobsList = document.getElementById("freelancerMyJobs");
-  myJobsList.innerHTML = "";
-
-  const myJobs = [];
-
-  for (let i = 1; i <= jobCount; i++) {
-    const job = await contract.methods.jobs(i).call();
-    
-    // Only show jobs where this freelancer is hired
-    if (job.freelancer.toLowerCase() === account.toLowerCase()) {
-      myJobs.push(job);
-    }
-  }
-
-  if (myJobs.length === 0) {
-    myJobsList.innerHTML = '<p class="empty-state">No active jobs</p>';
+  // Prevent simultaneous refreshes
+  if (refreshInProgress.freelancerJobs) {
+    console.log('Freelancer jobs refresh already in progress, skipping...');
     return;
   }
 
-  for (const job of myJobs) {
-    const jobCard = createFreelancerMyJobCard(job);
-    myJobsList.appendChild(jobCard);
+  refreshInProgress.freelancerJobs = true;
+
+  try {
+    const jobCount = await contract.methods.jobCount().call();
+    const myJobsList = document.getElementById("freelancerMyJobs");
+    myJobsList.innerHTML = "";
+
+    const myJobs = [];
+
+    for (let i = 1; i <= jobCount; i++) {
+      const job = await contract.methods.jobs(i).call();
+      
+      // Only show jobs where this freelancer is hired
+      if (job.freelancer.toLowerCase() === account.toLowerCase()) {
+        myJobs.push(job);
+      }
+    }
+
+    if (myJobs.length === 0) {
+      myJobsList.innerHTML = '<p class="empty-state">No active jobs</p>';
+      return;
+    }
+
+    for (const job of myJobs) {
+      const jobCard = createFreelancerMyJobCard(job);
+      myJobsList.appendChild(jobCard);
+    }
+  } finally {
+    refreshInProgress.freelancerJobs = false;
   }
 }
 
@@ -606,9 +654,7 @@ async function submitWork(jobId) {
   }
 }
 
-// ============================================
 // ARBITER DASHBOARD
-// ============================================
 async function loadArbiterDashboard() {
   // Load platform fees
   await loadPlatformFees();
@@ -622,9 +668,21 @@ async function loadArbiterDashboard() {
 
 // Load and display total platform fees
 async function loadPlatformFees() {
-  const fees = await contract.methods.collectedFees().call();
-  const feesEth = web3.utils.fromWei(fees, "ether");
-  document.getElementById("totalFees").innerText = feesEth;
+  // Prevent simultaneous refreshes
+  if (refreshInProgress.platformFees) {
+    console.log('Platform fees refresh already in progress, skipping...');
+    return;
+  }
+
+  refreshInProgress.platformFees = true;
+
+  try {
+    const fees = await contract.methods.collectedFees().call();
+    const feesEth = web3.utils.fromWei(fees, "ether");
+    document.getElementById("totalFees").innerText = feesEth;
+  } finally {
+    refreshInProgress.platformFees = false;
+  }
 }
 
 // Withdraw platform fees
@@ -656,29 +714,41 @@ async function withdrawFees() {
 
 // Load disputed jobs
 async function loadDisputedJobs() {
-  const jobCount = await contract.methods.jobCount().call();
-  const disputedList = document.getElementById("disputedJobsList");
-  disputedList.innerHTML = "";
-
-  const disputedJobs = [];
-
-  for (let i = 1; i <= jobCount; i++) {
-    const job = await contract.methods.jobs(i).call();
-    
-    // Only show jobs with Disputed status (status = 4)
-    if (job.status == 4) {
-      disputedJobs.push(job);
-    }
-  }
-
-  if (disputedJobs.length === 0) {
-    disputedList.innerHTML = '<p class="empty-state">No disputed jobs</p>';
+  // Prevent simultaneous refreshes
+  if (refreshInProgress.disputedJobs) {
+    console.log('Disputed jobs refresh already in progress, skipping...');
     return;
   }
 
-  for (const job of disputedJobs) {
-    const jobCard = createDisputedJobCard(job);
-    disputedList.appendChild(jobCard);
+  refreshInProgress.disputedJobs = true;
+
+  try {
+    const jobCount = await contract.methods.jobCount().call();
+    const disputedList = document.getElementById("disputedJobsList");
+    disputedList.innerHTML = "";
+
+    const disputedJobs = [];
+
+    for (let i = 1; i <= jobCount; i++) {
+      const job = await contract.methods.jobs(i).call();
+      
+      // Only show jobs with Disputed status (status = 4)
+      if (job.status == 4) {
+        disputedJobs.push(job);
+      }
+    }
+
+    if (disputedJobs.length === 0) {
+      disputedList.innerHTML = '<p class="empty-state">No disputed jobs</p>';
+      return;
+    }
+
+    for (const job of disputedJobs) {
+      const jobCard = createDisputedJobCard(job);
+      disputedList.appendChild(jobCard);
+    }
+  } finally {
+    refreshInProgress.disputedJobs = false;
   }
 }
 
@@ -733,95 +803,132 @@ async function resolveDispute(jobId, payFreelancer) {
   }
 }
 
-// ============================================
+
+// Clean up event listeners
+function cleanupEventListeners() {
+  eventSubscriptions.forEach(subscription => {
+    if (subscription && typeof subscription.unsubscribe === 'function') {
+      subscription.unsubscribe();
+    }
+  });
+  eventSubscriptions = [];
+}
+
+// Debounced refresh function wrapper
+function debouncedRefresh(refreshKey, refreshFunction, delay = 500) {
+  return async function() {
+    // Clear any pending timeout
+    if (refreshTimeouts[refreshKey]) {
+      clearTimeout(refreshTimeouts[refreshKey]);
+    }
+
+    // Set a new timeout
+    refreshTimeouts[refreshKey] = setTimeout(async () => {
+      await refreshFunction();
+    }, delay);
+  };
+}
+
 // EVENT LISTENERS FOR AUTO-REFRESH
-// ============================================
+
 function setupEventListeners() {
+  if (eventsInitialized) {
+    return;
+  }
+  eventsInitialized = true;
+
   // Listen to JobPosted event
-  contract.events.JobPosted({})
+  const jobPostedSub = contract.events.JobPosted({})
     .on('data', async (event) => {
       console.log('Job Posted:', event.returnValues);
       if (currentUserRole === 1) {
-        await loadClientJobs();
+        await debouncedRefresh('clientJobs', loadClientJobs, 500)();
       } else if (currentUserRole === 2) {
-        await loadJobMarketplace();
+        await debouncedRefresh('jobMarketplace', loadJobMarketplace, 500)();
       }
     });
+  eventSubscriptions.push(jobPostedSub);
 
   // Listen to BidPlaced event
-  contract.events.BidPlaced({})
+  const bidPlacedSub = contract.events.BidPlaced({})
     .on('data', async (event) => {
       console.log('Bid Placed:', event.returnValues);
       if (currentUserRole === 1) {
-        await loadClientJobs();
+        await debouncedRefresh('clientJobs', loadClientJobs, 500)();
       }
     });
+  eventSubscriptions.push(bidPlacedSub);
 
   // Listen to FreelancerHired event
-  contract.events.FreelancerHired({})
+  const hiredSub = contract.events.FreelancerHired({})
     .on('data', async (event) => {
       console.log('Freelancer Hired:', event.returnValues);
       if (currentUserRole === 1) {
-        await loadClientJobs();
+        await debouncedRefresh('clientJobs', loadClientJobs, 500)();
       } else if (currentUserRole === 2) {
-        await loadJobMarketplace();
-        await loadFreelancerJobs();
+        await debouncedRefresh('jobMarketplace', loadJobMarketplace, 500)();
+        await debouncedRefresh('freelancerJobs', loadFreelancerJobs, 500)();
       }
     });
+  eventSubscriptions.push(hiredSub);
 
   // Listen to WorkMarkedCompleted event
-  contract.events.WorkMarkedCompleted({})
+  const completedSub = contract.events.WorkMarkedCompleted({})
     .on('data', async (event) => {
       console.log('Work Marked Completed:', event.returnValues);
       if (currentUserRole === 1) {
-        await loadClientJobs();
+        await debouncedRefresh('clientJobs', loadClientJobs, 500)();
       } else if (currentUserRole === 2) {
-        await loadFreelancerJobs();
+        await debouncedRefresh('freelancerJobs', loadFreelancerJobs, 500)();
       }
     });
+  eventSubscriptions.push(completedSub);
 
   // Listen to WorkApproved event
-  contract.events.WorkApproved({})
+  const approvedSub = contract.events.WorkApproved({})
     .on('data', async (event) => {
       console.log('Work Approved:', event.returnValues);
       if (currentUserRole === 1) {
-        await loadClientJobs();
+        await debouncedRefresh('clientJobs', loadClientJobs, 500)();
       } else if (currentUserRole === 2) {
-        await loadFreelancerJobs();
+        await debouncedRefresh('freelancerJobs', loadFreelancerJobs, 500)();
       }
     });
+  eventSubscriptions.push(approvedSub);
 
   // Listen to DisputeRaised event
-  contract.events.DisputeRaised({})
+  const raisedSub = contract.events.DisputeRaised({})
     .on('data', async (event) => {
       console.log('Dispute Raised:', event.returnValues);
       if (currentUserRole === 0) {
-        await loadDisputedJobs();
+        await debouncedRefresh('disputedJobs', loadDisputedJobs, 500)();
       } else if (currentUserRole === 1) {
-        await loadClientJobs();
+        await debouncedRefresh('clientJobs', loadClientJobs, 500)();
       }
     });
+  eventSubscriptions.push(raisedSub);
 
   // Listen to DisputeResolved event
-  contract.events.DisputeResolved({})
+  const resolvedSub = contract.events.DisputeResolved({})
     .on('data', async (event) => {
       console.log('Dispute Resolved:', event.returnValues);
       if (currentUserRole === 0) {
-        await loadDisputedJobs();
-        await loadPlatformFees();
+        await debouncedRefresh('disputedJobs', loadDisputedJobs, 500)();
+        await debouncedRefresh('platformFees', loadPlatformFees, 500)();
       } else if (currentUserRole === 1) {
-        await loadClientJobs();
+        await debouncedRefresh('clientJobs', loadClientJobs, 500)();
       } else if (currentUserRole === 2) {
-        await loadFreelancerJobs();
+        await debouncedRefresh('freelancerJobs', loadFreelancerJobs, 500)();
       }
     });
+  eventSubscriptions.push(resolvedSub);
 
   console.log('Event listeners setup complete');
 }
 
-// ============================================
+
 // UTILITY FUNCTIONS
-// ============================================
+
 function getStatusText(status) {
   const statuses = ["Open", "InProgress", "Completed", "Closed", "Disputed", "Resolved"];
   return statuses[status] || "Unknown";
