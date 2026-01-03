@@ -2,63 +2,165 @@
 <html>
 <head>
   <title>Freelance Marketplace</title>
+  <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
   <script src="./abi.js"></script>
   <script defer src="./app.js"></script>
 </head>
 
 <body>
-  <h2>Freelance Marketplace DApp</h2>
+  <div class="container">
+    <h2>Freelance Marketplace DApp</h2>
 
-  <!-- Wallet -->
-  <button id="connectBtn">Connect Wallet</button>
-  <p id="wallet"></p>
-
-  <!-- logout -->
-  <button id="logoutBtn" style="display:none;">Logout</button>
-
-  <!-- Registration -->
-  <div id="registration" style="display:none;">
-    <h3>Register</h3>
-
-    <select id="role">
-      <option value="">Select Role</option>
-      <option value="client">Client</option>
-      <option value="freelancer">Freelancer</option>
-    </select>
-
-    <br><br>
-
-    <input type="text" id="name" placeholder="Enter your name" />
-
-    <br><br>
-
-    <button id="registerBtn">Register</button>
-  </div>
-
-  <!-- Homepage -->
-  <div id="homepage" style="display:none;">
-    <h3>Welcome</h3>
-    <p id="userInfo"></p>
-
-    <!-- Client Job Posting -->
-    <div id="clientSection" style="display:none;">
-      <h3>Post a Job</h3>
-  
-      <input type="text" id="jobTitle" placeholder="Job Title" /><br><br>
-      <input type="text" id="jobCategory" placeholder="Category" /><br><br>
-      <input type="number" id="jobBudget" placeholder="Budget (wei)" /><br><br>
-      <input type="number" id="jobDeadline" placeholder="Deadline (unix timestamp)" /><br><br>
-  
-      <button id="postJobBtn">Post Job</button>
-  
-      <h4>Your Jobs</h4>
-      <ul id="jobList"></ul>
+    <!-- Wallet -->
+    <div class="wallet-section">
+      <button id="connectBtn" class="btn btn-primary">Connect Wallet</button>
+      <p id="wallet"></p>
+      <button id="logoutBtn" class="btn btn-secondary" style="display:none;">Logout</button>
     </div>
-    
+
+    <!-- Registration -->
+    <div id="registration" style="display:none;">
+      <h3>Register</h3>
+
+      <select id="role">
+        <option value="">Select Role</option>
+        <option value="client">Client</option>
+        <option value="freelancer">Freelancer</option>
+      </select>
+
+      <br><br>
+
+      <input type="text" id="name" placeholder="Enter your name" />
+
+      <br><br>
+
+      <button id="registerBtn" class="btn btn-primary">Register</button>
+    </div>
+
+    <!-- Homepage - Keep existing structure but leave empty for now -->
+    <div id="homepage" style="display:none;">
+      <h3>Welcome</h3>
+      <p id="userInfo"></p>
+    </div>
+
+    <!-- CLIENT DASHBOARD -->
+    <div id="clientDashboard" style="display:none;">
+      <h2>Client Dashboard</h2>
+      
+      <!-- Post Job Section -->
+      <div class="section">
+        <h3>Post a New Job</h3>
+        <div class="form-group">
+          <input type="text" id="jobTitle" placeholder="Job Title" class="input-field" />
+        </div>
+        <div class="form-group">
+          <select id="jobCategory" class="input-field">
+            <option value="">Select Category</option>
+            <option value="Dev">Development</option>
+            <option value="Design">Design</option>
+            <option value="Writing">Writing</option>
+            <option value="Marketing">Marketing</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <input type="number" id="jobBudget" placeholder="Max Budget (ETH)" step="0.001" class="input-field" />
+        </div>
+        <div class="form-group">
+          <label>Deadline:</label>
+          <input type="datetime-local" id="jobDeadline" class="input-field" />
+        </div>
+        <button id="postJobBtn" class="btn btn-primary">Post Job</button>
+      </div>
+
+      <!-- My Posted Jobs -->
+      <div class="section">
+        <h3>My Posted Jobs</h3>
+        <div id="clientJobsList"></div>
+      </div>
+
+      <!-- View Bids Modal -->
+      <div id="bidsModal" class="modal" style="display:none;">
+        <div class="modal-content">
+          <span class="close" id="closeBidsModal">&times;</span>
+          <h3>Bids for Job: <span id="modalJobTitle"></span></h3>
+          <div id="bidsList"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FREELANCER DASHBOARD -->
+    <div id="freelancerDashboard" style="display:none;">
+      <h2>Freelancer Dashboard</h2>
+      
+      <!-- Job Marketplace with Filtering/Sorting -->
+      <div class="section">
+        <h3>Available Jobs</h3>
+        
+        <div class="filters">
+          <label>Filter by Category:</label>
+          <select id="categoryFilter" class="input-field">
+            <option value="all">All Categories</option>
+            <option value="Dev">Development</option>
+            <option value="Design">Design</option>
+            <option value="Writing">Writing</option>
+            <option value="Marketing">Marketing</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <div id="jobMarketplace"></div>
+      </div>
+
+      <!-- Place Bid Modal -->
+      <div id="bidModal" class="modal" style="display:none;">
+        <div class="modal-content">
+          <span class="close" id="closeBidModal">&times;</span>
+          <h3>Place Bid for: <span id="bidModalJobTitle"></span></h3>
+          <p>Max Budget: <span id="bidModalMaxBudget"></span> ETH</p>
+          <div class="form-group">
+            <input type="number" id="bidAmount" placeholder="Bid Amount (ETH)" step="0.001" class="input-field" />
+          </div>
+          <div class="form-group">
+            <input type="number" id="bidTime" placeholder="Time Required (days)" class="input-field" />
+          </div>
+          <button id="placeBidBtn" class="btn btn-primary">Place Bid</button>
+          <p id="bidError" class="error-msg"></p>
+        </div>
+      </div>
+
+      <!-- My Jobs (Where Freelancer is Hired) -->
+      <div class="section">
+        <h3>My Jobs</h3>
+        <div id="freelancerMyJobs"></div>
+      </div>
+    </div>
+
+    <!-- ARBITER DASHBOARD -->
+    <div id="arbiterDashboard" style="display:none;">
+      <h2>Arbiter Dashboard</h2>
+      
+      <!-- Platform Fees -->
+      <div class="section">
+        <h3>Platform Fees</h3>
+        <p>Total Collected Fees: <span id="totalFees">0</span> ETH</p>
+        <div class="form-group">
+          <input type="text" id="withdrawAddress" placeholder="Recipient Address" class="input-field" />
+        </div>
+        <div class="form-group">
+          <input type="number" id="withdrawAmount" placeholder="Amount to Withdraw (ETH)" step="0.001" class="input-field" />
+        </div>
+        <button id="withdrawFeesBtn" class="btn btn-primary">Withdraw Fees</button>
+      </div>
+
+      <!-- Disputed Jobs -->
+      <div class="section">
+        <h3>Disputed Jobs</h3>
+        <div id="disputedJobsList"></div>
+      </div>
+    </div>
+
   </div>
-
-
-
 </body>
 </html>
