@@ -28,10 +28,10 @@ let eventSubscriptions = [];
 
 // Pagination tracking
 let paginationState = {
-  clientJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0 },
-  jobMarketplace: { currentPage: 1, itemsPerPage: 8, totalItems: 0 },
-  freelancerJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0 },
-  disputedJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0 }
+  clientJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0, allJobs: [] },
+  jobMarketplace: { currentPage: 1, itemsPerPage: 8, totalItems: 0, allJobs: [] },
+  freelancerJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0, allJobs: [] },
+  disputedJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0, allJobs: [] }
 };
 
 const connectBtn = document.getElementById("connectBtn");
@@ -200,7 +200,7 @@ async function postJob() {
       .send({ from: account });
 
     alert("Job posted successfully!");
-    
+
     // Clear form
     document.getElementById("jobTitle").value = "";
     document.getElementById("jobCategory").value = "";
@@ -245,19 +245,21 @@ async function loadClientJobs() {
     }
 
     // Update pagination state
+    paginationState.clientJobs.allJobs = clientJobsData;
     paginationState.clientJobs.totalItems = clientJobsData.length;
     paginationState.clientJobs.currentPage = 1;
 
     // Render the table with pagination
-    renderClientJobsTable(clientJobsData, jobsList);
+    renderClientJobsTable(jobsList);
   } finally {
     refreshInProgress.clientJobs = false;
   }
 }
 
 // Render client jobs table with pagination
-function renderClientJobsTable(allJobs, container) {
+function renderClientJobsTable(container) {
   const state = paginationState.clientJobs;
+  const allJobs = state.allJobs;
   const start = (state.currentPage - 1) * state.itemsPerPage;
   const end = start + state.itemsPerPage;
   const paginatedJobs = allJobs.slice(start, end);
@@ -319,27 +321,27 @@ function renderClientJobsTable(allJobs, container) {
   // Add pagination controls
   const totalPages = Math.ceil(state.totalItems / state.itemsPerPage);
   if (totalPages > 1) {
-    html += createPaginationControls('clientJobs', state.currentPage, totalPages, 'loadClientJobs');
+    html += createPaginationControls('clientJobs', state.currentPage, totalPages);
   }
 
   container.innerHTML = html;
 }
 
 // Pagination helper function
-function createPaginationControls(paginationKey, currentPage, totalPages, reloadFunction) {
+function createPaginationControls(paginationKey, currentPage, totalPages) {
   let html = '<div class="pagination-container">';
 
   // Previous button
-  html += `<button class="pagination-btn" onclick="goToPage('${paginationKey}', ${currentPage - 1}, '${reloadFunction}')" ${currentPage === 1 ? 'disabled' : ''}>← Previous</button>`;
+  html += `<button class="pagination-btn" onclick="goToPage('${paginationKey}', ${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>← Previous</button>`;
 
   // Page numbers
   for (let i = 1; i <= totalPages; i++) {
     const isActive = i === currentPage ? 'active' : '';
-    html += `<button class="pagination-btn ${isActive}" onclick="goToPage('${paginationKey}', ${i}, '${reloadFunction}')">${i}</button>`;
+    html += `<button class="pagination-btn ${isActive}" onclick="goToPage('${paginationKey}', ${i})">${i}</button>`;
   }
 
   // Next button
-  html += `<button class="pagination-btn" onclick="goToPage('${paginationKey}', ${currentPage + 1}, '${reloadFunction}')" ${currentPage === totalPages ? 'disabled' : ''}>Next →</button>`;
+  html += `<button class="pagination-btn" onclick="goToPage('${paginationKey}', ${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Next →</button>`;
 
   // Page info
   html += `<span class="pagination-info">Page ${currentPage} of ${totalPages}</span>`;
@@ -349,9 +351,28 @@ function createPaginationControls(paginationKey, currentPage, totalPages, reload
 }
 
 // Go to specific page
-function goToPage(paginationKey, pageNum, reloadFunction) {
-  paginationState[paginationKey].currentPage = pageNum;
-  window[reloadFunction]();
+function goToPage(paginationKey, pageNum) {
+  const state = paginationState[paginationKey];
+  const totalPages = Math.ceil(state.totalItems / state.itemsPerPage);
+
+  // Validate page number
+  if (pageNum < 1 || pageNum > totalPages) {
+    return;
+  }
+
+  // Update current page
+  state.currentPage = pageNum;
+
+  // Re-render the appropriate table
+  if (paginationKey === 'clientJobs') {
+    renderClientJobsTable(document.getElementById('clientJobsList'));
+  } else if (paginationKey === 'jobMarketplace') {
+    renderJobMarketplaceTable(document.getElementById('jobMarketplace'));
+  } else if (paginationKey === 'freelancerJobs') {
+    renderFreelancerJobsTable(document.getElementById('freelancerMyJobs'));
+  } else if (paginationKey === 'disputedJobs') {
+    renderDisputedJobsTable(document.getElementById('disputedJobsList'));
+  }
 }
 
 // Create job card for client view
@@ -410,7 +431,7 @@ function createClientJobCard(job) {
 // View bids for a job
 async function viewBids(jobId) {
   const job = await contract.methods.jobs(jobId).call();
-  
+
   document.getElementById("modalJobTitle").innerText = job.title;
   document.getElementById("bidsModal").classList.add("show");
 
@@ -420,7 +441,7 @@ async function viewBids(jobId) {
   // Get all bids for this job
   const bids = [];
   let bidIndex = 0;
-  
+
   try {
     while (true) {
       const bid = await contract.methods.jobBids(jobId, bidIndex).call();
@@ -571,7 +592,7 @@ async function loadJobMarketplace() {
     const openJobs = [];
     for (let i = 1; i <= jobCount; i++) {
       const job = await contract.methods.jobs(i).call();
-      
+
       // Only show Open status jobs
       if (job.status == 0) {
         openJobs.push({ ...job, id: i });
@@ -590,6 +611,7 @@ async function loadJobMarketplace() {
     });
 
     // Update pagination state
+    paginationState.jobMarketplace.allJobs = filteredJobs;
     paginationState.jobMarketplace.totalItems = filteredJobs.length;
     paginationState.jobMarketplace.currentPage = 1;
 
@@ -599,15 +621,16 @@ async function loadJobMarketplace() {
     }
 
     // Render the table with pagination
-    renderJobMarketplaceTable(filteredJobs, marketplace);
+    renderJobMarketplaceTable(marketplace);
   } finally {
     refreshInProgress.jobMarketplace = false;
   }
 }
 
 // Render job marketplace table with pagination
-function renderJobMarketplaceTable(allJobs, container) {
+function renderJobMarketplaceTable(container) {
   const state = paginationState.jobMarketplace;
+  const allJobs = state.allJobs;
   const start = (state.currentPage - 1) * state.itemsPerPage;
   const end = start + state.itemsPerPage;
   const paginatedJobs = allJobs.slice(start, end);
@@ -654,7 +677,7 @@ function renderJobMarketplaceTable(allJobs, container) {
   // Add pagination controls
   const totalPages = Math.ceil(state.totalItems / state.itemsPerPage);
   if (totalPages > 1) {
-    html += createPaginationControls('jobMarketplace', state.currentPage, totalPages, 'loadJobMarketplace');
+    html += createPaginationControls('jobMarketplace', state.currentPage, totalPages);
   }
 
   container.innerHTML = html;
@@ -771,7 +794,7 @@ async function loadFreelancerJobs() {
 
     for (let i = 1; i <= jobCount; i++) {
       const job = await contract.methods.jobs(i).call();
-      
+
       // Only show jobs where this freelancer is hired
       if (job.freelancer.toLowerCase() === account.toLowerCase()) {
         myJobs.push({ ...job, id: i });
@@ -779,6 +802,7 @@ async function loadFreelancerJobs() {
     }
 
     // Update pagination state
+    paginationState.freelancerJobs.allJobs = myJobs;
     paginationState.freelancerJobs.totalItems = myJobs.length;
     paginationState.freelancerJobs.currentPage = 1;
 
@@ -788,15 +812,16 @@ async function loadFreelancerJobs() {
     }
 
     // Render the table with pagination
-    renderFreelancerJobsTable(myJobs, myJobsList);
+    renderFreelancerJobsTable(myJobsList);
   } finally {
     refreshInProgress.freelancerJobs = false;
   }
 }
 
 // Render freelancer jobs table with pagination
-function renderFreelancerJobsTable(allJobs, container) {
+function renderFreelancerJobsTable(container) {
   const state = paginationState.freelancerJobs;
+  const allJobs = state.allJobs;
   const start = (state.currentPage - 1) * state.itemsPerPage;
   const end = start + state.itemsPerPage;
   const paginatedJobs = allJobs.slice(start, end);
@@ -848,7 +873,7 @@ function renderFreelancerJobsTable(allJobs, container) {
   // Add pagination controls
   const totalPages = Math.ceil(state.totalItems / state.itemsPerPage);
   if (totalPages > 1) {
-    html += createPaginationControls('freelancerJobs', state.currentPage, totalPages, 'loadFreelancerJobs');
+    html += createPaginationControls('freelancerJobs', state.currentPage, totalPages);
   }
 
   container.innerHTML = html;
@@ -944,11 +969,11 @@ async function withdrawFees() {
   try {
     await contract.methods.withdrawFees(address, amountWei).send({ from: account });
     alert("Fees withdrawn successfully!");
-    
+
     // Clear form
     document.getElementById("withdrawAddress").value = "";
     document.getElementById("withdrawAmount").value = "";
-    
+
     await loadPlatformFees();
   } catch (error) {
     console.error(error);
@@ -975,7 +1000,7 @@ async function loadDisputedJobs() {
 
     for (let i = 1; i <= jobCount; i++) {
       const job = await contract.methods.jobs(i).call();
-      
+
       // Only show jobs with Disputed status (status = 4)
       if (job.status == 4) {
         disputedJobs.push({ ...job, id: i });
@@ -983,6 +1008,7 @@ async function loadDisputedJobs() {
     }
 
     // Update pagination state
+    paginationState.disputedJobs.allJobs = disputedJobs;
     paginationState.disputedJobs.totalItems = disputedJobs.length;
     paginationState.disputedJobs.currentPage = 1;
 
@@ -992,15 +1018,16 @@ async function loadDisputedJobs() {
     }
 
     // Render the table with pagination
-    renderDisputedJobsTable(disputedJobs, disputedList);
+    renderDisputedJobsTable(disputedList);
   } finally {
     refreshInProgress.disputedJobs = false;
   }
 }
 
 // Render disputed jobs table with pagination
-function renderDisputedJobsTable(allJobs, container) {
+function renderDisputedJobsTable(container) {
   const state = paginationState.disputedJobs;
+  const allJobs = state.allJobs;
   const start = (state.currentPage - 1) * state.itemsPerPage;
   const end = start + state.itemsPerPage;
   const paginatedJobs = allJobs.slice(start, end);
@@ -1050,7 +1077,7 @@ function renderDisputedJobsTable(allJobs, container) {
   // Add pagination controls
   const totalPages = Math.ceil(state.totalItems / state.itemsPerPage);
   if (totalPages > 1) {
-    html += createPaginationControls('disputedJobs', state.currentPage, totalPages, 'loadDisputedJobs');
+    html += createPaginationControls('disputedJobs', state.currentPage, totalPages);
   }
 
   container.innerHTML = html;
@@ -1091,7 +1118,7 @@ function createDisputedJobCard(job) {
 // Resolve dispute
 async function resolveDispute(jobId, payFreelancer) {
   const action = payFreelancer ? "pay the freelancer" : "refund the client";
-  
+
   if (!confirm(`Are you sure you want to ${action}?`)) {
     return;
   }
@@ -1120,7 +1147,7 @@ function cleanupEventListeners() {
 
 // Debounced refresh function wrapper
 function debouncedRefresh(refreshKey, refreshFunction, delay = 500) {
-  return async function() {
+  return async function () {
     // Clear any pending timeout
     if (refreshTimeouts[refreshKey]) {
       clearTimeout(refreshTimeouts[refreshKey]);
