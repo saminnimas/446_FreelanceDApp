@@ -26,6 +26,14 @@ let refreshInProgress = {
 // Store event subscriptions for cleanup
 let eventSubscriptions = [];
 
+// Pagination tracking
+let paginationState = {
+  clientJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0 },
+  jobMarketplace: { currentPage: 1, itemsPerPage: 8, totalItems: 0 },
+  freelancerJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0 },
+  disputedJobs: { currentPage: 1, itemsPerPage: 8, totalItems: 0 }
+};
+
 const connectBtn = document.getElementById("connectBtn");
 const registerBtn = document.getElementById("registerBtn");
 const logoutBtn = document.getElementById("logoutBtn");
@@ -227,18 +235,123 @@ async function loadClientJobs() {
       return;
     }
 
+    // Collect all jobs for this client
+    const clientJobsData = [];
     for (let i = 1; i <= jobCount; i++) {
       const job = await contract.methods.jobs(i).call();
-
-      // Only show jobs posted by this client
-      if (job.client.toLowerCase() !== account.toLowerCase()) continue;
-
-      const jobCard = createClientJobCard(job);
-      jobsList.appendChild(jobCard);
+      if (job.client.toLowerCase() === account.toLowerCase()) {
+        clientJobsData.push({ ...job, id: i });
+      }
     }
+
+    // Update pagination state
+    paginationState.clientJobs.totalItems = clientJobsData.length;
+    paginationState.clientJobs.currentPage = 1;
+
+    // Render the table with pagination
+    renderClientJobsTable(clientJobsData, jobsList);
   } finally {
     refreshInProgress.clientJobs = false;
   }
+}
+
+// Render client jobs table with pagination
+function renderClientJobsTable(allJobs, container) {
+  const state = paginationState.clientJobs;
+  const start = (state.currentPage - 1) * state.itemsPerPage;
+  const end = start + state.itemsPerPage;
+  const paginatedJobs = allJobs.slice(start, end);
+
+  let html = `
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Job Title</th>
+            <th>Category</th>
+            <th>Budget (ETH)</th>
+            <th>Deadline</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  paginatedJobs.forEach(job => {
+    const statusText = getStatusText(job.status);
+    const budgetEth = web3.utils.fromWei(job.maxBudget, "ether");
+    const deadlineDate = new Date(job.deadline * 1000).toLocaleDateString();
+
+    let escrowBadge = "";
+    if (job.status == 1 && job.agreedAmount > 0) {
+      escrowBadge = ' <span class="escrow-badge">In Escrow</span>';
+    }
+
+    let actionBtn = "";
+    if (job.status == 0) {
+      actionBtn = `<button class="btn btn-primary btn-small" onclick="viewBids(${job.id})">View Bids</button>`;
+    } else if (job.status == 2) {
+      actionBtn = `
+        <button class="btn btn-success btn-small" onclick="approveWork(${job.id})">Approve</button>
+        <button class="btn btn-danger btn-small" onclick="raiseDispute(${job.id})">Dispute</button>
+      `;
+    }
+
+    html += `
+      <tr>
+        <td><strong>${job.title}</strong></td>
+        <td>${job.category}</td>
+        <td>${budgetEth}</td>
+        <td>${deadlineDate}</td>
+        <td><span class="status-badge status-${statusText.toLowerCase()}">${statusText}</span>${escrowBadge}</td>
+        <td>${actionBtn}</td>
+      </tr>
+    `;
+  });
+
+  html += `
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  // Add pagination controls
+  const totalPages = Math.ceil(state.totalItems / state.itemsPerPage);
+  if (totalPages > 1) {
+    html += createPaginationControls('clientJobs', state.currentPage, totalPages, 'loadClientJobs');
+  }
+
+  container.innerHTML = html;
+}
+
+// Pagination helper function
+function createPaginationControls(paginationKey, currentPage, totalPages, reloadFunction) {
+  let html = '<div class="pagination-container">';
+
+  // Previous button
+  html += `<button class="pagination-btn" onclick="goToPage('${paginationKey}', ${currentPage - 1}, '${reloadFunction}')" ${currentPage === 1 ? 'disabled' : ''}>← Previous</button>`;
+
+  // Page numbers
+  for (let i = 1; i <= totalPages; i++) {
+    const isActive = i === currentPage ? 'active' : '';
+    html += `<button class="pagination-btn ${isActive}" onclick="goToPage('${paginationKey}', ${i}, '${reloadFunction}')">${i}</button>`;
+  }
+
+  // Next button
+  html += `<button class="pagination-btn" onclick="goToPage('${paginationKey}', ${currentPage + 1}, '${reloadFunction}')" ${currentPage === totalPages ? 'disabled' : ''}>Next →</button>`;
+
+  // Page info
+  html += `<span class="pagination-info">Page ${currentPage} of ${totalPages}</span>`;
+
+  html += '</div>';
+  return html;
+}
+
+// Go to specific page
+function goToPage(paginationKey, pageNum, reloadFunction) {
+  paginationState[paginationKey].currentPage = pageNum;
+  window[reloadFunction]();
 }
 
 // Create job card for client view
@@ -299,7 +412,7 @@ async function viewBids(jobId) {
   const job = await contract.methods.jobs(jobId).call();
   
   document.getElementById("modalJobTitle").innerText = job.title;
-  document.getElementById("bidsModal").style.display = "flex";
+  document.getElementById("bidsModal").classList.add("show");
 
   const bidsList = document.getElementById("bidsList");
   bidsList.innerHTML = '<p class="loading">Loading bids...</p>';
@@ -326,32 +439,46 @@ async function viewBids(jobId) {
     return;
   }
 
-  for (const bid of bids) {
-    const bidCard = document.createElement("div");
-    bidCard.className = "bid-card";
+  let html = `
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Freelancer</th>
+            <th>Bid Amount (ETH)</th>
+            <th>Time Required (days)</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
 
+  bids.forEach(bid => {
     const amountEth = web3.utils.fromWei(bid.amount, "ether");
+    const shortFreelancer = bid.freelancer.substring(0, 10) + "...";
 
-    bidCard.innerHTML = `
-      <p><strong>Freelancer:</strong> ${bid.freelancer}</p>
-      <p><strong>Bid Amount:</strong> ${amountEth} ETH</p>
-      <p><strong>Time Required:</strong> ${bid.timeRequired} days</p>
+    html += `
+      <tr>
+        <td title="${bid.freelancer}">${shortFreelancer}</td>
+        <td><strong>${amountEth}</strong></td>
+        <td>${bid.timeRequired}</td>
+        <td><button class="btn btn-success btn-small" onclick="hireFreelancer(${jobId}, ${bid.index}, '${bid.amount}')">Hire</button></td>
+      </tr>
     `;
+  });
 
-    // Add Hire button
-    const hireBtn = document.createElement("button");
-    hireBtn.className = "btn btn-success btn-small";
-    hireBtn.innerText = "Hire";
-    hireBtn.onclick = () => hireFreelancer(jobId, bid.index, bid.amount);
-    bidCard.appendChild(hireBtn);
+  html += `
+        </tbody>
+      </table>
+    </div>
+  `;
 
-    bidsList.appendChild(bidCard);
-  }
+  bidsList.innerHTML = html;
 }
 
 // Close bids modal
 document.getElementById("closeBidsModal").onclick = () => {
-  document.getElementById("bidsModal").style.display = "none";
+  document.getElementById("bidsModal").classList.remove("show");
 };
 
 // Hire freelancer - Trigger MetaMask payment
@@ -365,7 +492,7 @@ async function hireFreelancer(jobId, bidIndex, bidAmount) {
       });
 
     alert("Freelancer hired successfully! Funds are now in escrow.");
-    document.getElementById("bidsModal").style.display = "none";
+    document.getElementById("bidsModal").classList.remove("show");
     await loadClientJobs();
   } catch (error) {
     console.error(error);
@@ -431,7 +558,7 @@ async function loadJobMarketplace() {
   try {
     const jobCount = await contract.methods.jobCount().call();
     const marketplace = document.getElementById("jobMarketplace");
-    marketplace.innerHTML = '<p class="loading">Loading jobs...</p>';
+    marketplace.innerHTML = '';
 
     const selectedCategory = document.getElementById("categoryFilter").value;
 
@@ -447,7 +574,7 @@ async function loadJobMarketplace() {
       
       // Only show Open status jobs
       if (job.status == 0) {
-        openJobs.push(job);
+        openJobs.push({ ...job, id: i });
       }
     }
 
@@ -462,20 +589,75 @@ async function loadJobMarketplace() {
       return parseFloat(b.maxBudget) - parseFloat(a.maxBudget);
     });
 
-    marketplace.innerHTML = "";
+    // Update pagination state
+    paginationState.jobMarketplace.totalItems = filteredJobs.length;
+    paginationState.jobMarketplace.currentPage = 1;
 
     if (filteredJobs.length === 0) {
       marketplace.innerHTML = '<p class="empty-state">No jobs found for selected category</p>';
       return;
     }
 
-    for (const job of filteredJobs) {
-      const jobCard = createFreelancerJobCard(job);
-      marketplace.appendChild(jobCard);
-    }
+    // Render the table with pagination
+    renderJobMarketplaceTable(filteredJobs, marketplace);
   } finally {
     refreshInProgress.jobMarketplace = false;
   }
+}
+
+// Render job marketplace table with pagination
+function renderJobMarketplaceTable(allJobs, container) {
+  const state = paginationState.jobMarketplace;
+  const start = (state.currentPage - 1) * state.itemsPerPage;
+  const end = start + state.itemsPerPage;
+  const paginatedJobs = allJobs.slice(start, end);
+
+  let html = `
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Job Title</th>
+            <th>Category</th>
+            <th>Budget (ETH)</th>
+            <th>Deadline</th>
+            <th>Client</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  paginatedJobs.forEach(job => {
+    const budgetEth = web3.utils.fromWei(job.maxBudget, "ether");
+    const deadlineDate = new Date(job.deadline * 1000).toLocaleDateString();
+    const shortClient = job.client.substring(0, 10) + "...";
+
+    html += `
+      <tr>
+        <td><strong>${job.title}</strong></td>
+        <td>${job.category}</td>
+        <td>${budgetEth}</td>
+        <td>${deadlineDate}</td>
+        <td title="${job.client}">${shortClient}</td>
+        <td><button class="btn btn-primary btn-small" onclick="openBidModal(${JSON.stringify(job).replace(/"/g, '&quot;')})">Place Bid</button></td>
+      </tr>
+    `;
+  });
+
+  html += `
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  // Add pagination controls
+  const totalPages = Math.ceil(state.totalItems / state.itemsPerPage);
+  if (totalPages > 1) {
+    html += createPaginationControls('jobMarketplace', state.currentPage, totalPages, 'loadJobMarketplace');
+  }
+
+  container.innerHTML = html;
 }
 
 // Create job card for freelancer view
@@ -515,7 +697,7 @@ async function openBidModal(job) {
 
   document.getElementById("bidModalJobTitle").innerText = job.title;
   document.getElementById("bidModalMaxBudget").innerText = web3.utils.fromWei(job.maxBudget, "ether");
-  document.getElementById("bidModal").style.display = "flex";
+  document.getElementById("bidModal").classList.add("show");
 
   // Store job data for validation
   window.currentBidJob = job;
@@ -531,7 +713,7 @@ async function openBidModal(job) {
 
 // Close bid modal
 document.getElementById("closeBidModal").onclick = () => {
-  document.getElementById("bidModal").style.display = "none";
+  document.getElementById("bidModal").classList.remove("show");
 };
 
 // Place bid with validation
@@ -592,22 +774,84 @@ async function loadFreelancerJobs() {
       
       // Only show jobs where this freelancer is hired
       if (job.freelancer.toLowerCase() === account.toLowerCase()) {
-        myJobs.push(job);
+        myJobs.push({ ...job, id: i });
       }
     }
+
+    // Update pagination state
+    paginationState.freelancerJobs.totalItems = myJobs.length;
+    paginationState.freelancerJobs.currentPage = 1;
 
     if (myJobs.length === 0) {
       myJobsList.innerHTML = '<p class="empty-state">No active jobs</p>';
       return;
     }
 
-    for (const job of myJobs) {
-      const jobCard = createFreelancerMyJobCard(job);
-      myJobsList.appendChild(jobCard);
-    }
+    // Render the table with pagination
+    renderFreelancerJobsTable(myJobs, myJobsList);
   } finally {
     refreshInProgress.freelancerJobs = false;
   }
+}
+
+// Render freelancer jobs table with pagination
+function renderFreelancerJobsTable(allJobs, container) {
+  const state = paginationState.freelancerJobs;
+  const start = (state.currentPage - 1) * state.itemsPerPage;
+  const end = start + state.itemsPerPage;
+  const paginatedJobs = allJobs.slice(start, end);
+
+  let html = `
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Job Title</th>
+            <th>Category</th>
+            <th>Agreed Amount (ETH)</th>
+            <th>Client</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  paginatedJobs.forEach(job => {
+    const statusText = getStatusText(job.status);
+    const agreedAmountEth = web3.utils.fromWei(job.agreedAmount, "ether");
+    const shortClient = job.client.substring(0, 10) + "...";
+
+    let actionBtn = "";
+    if (job.status == 1) {
+      actionBtn = `<button class="btn btn-success btn-small" onclick="submitWork(${job.id})">Submit Work</button>`;
+    }
+
+    html += `
+      <tr>
+        <td><strong>${job.title}</strong></td>
+        <td>${job.category}</td>
+        <td>${agreedAmountEth}</td>
+        <td title="${job.client}">${shortClient}</td>
+        <td><span class="status-badge status-${statusText.toLowerCase()}">${statusText}</span></td>
+        <td>${actionBtn}</td>
+      </tr>
+    `;
+  });
+
+  html += `
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  // Add pagination controls
+  const totalPages = Math.ceil(state.totalItems / state.itemsPerPage);
+  if (totalPages > 1) {
+    html += createPaginationControls('freelancerJobs', state.currentPage, totalPages, 'loadFreelancerJobs');
+  }
+
+  container.innerHTML = html;
 }
 
 // Create job card for freelancer's hired jobs
@@ -734,22 +978,82 @@ async function loadDisputedJobs() {
       
       // Only show jobs with Disputed status (status = 4)
       if (job.status == 4) {
-        disputedJobs.push(job);
+        disputedJobs.push({ ...job, id: i });
       }
     }
+
+    // Update pagination state
+    paginationState.disputedJobs.totalItems = disputedJobs.length;
+    paginationState.disputedJobs.currentPage = 1;
 
     if (disputedJobs.length === 0) {
       disputedList.innerHTML = '<p class="empty-state">No disputed jobs</p>';
       return;
     }
 
-    for (const job of disputedJobs) {
-      const jobCard = createDisputedJobCard(job);
-      disputedList.appendChild(jobCard);
-    }
+    // Render the table with pagination
+    renderDisputedJobsTable(disputedJobs, disputedList);
   } finally {
     refreshInProgress.disputedJobs = false;
   }
+}
+
+// Render disputed jobs table with pagination
+function renderDisputedJobsTable(allJobs, container) {
+  const state = paginationState.disputedJobs;
+  const start = (state.currentPage - 1) * state.itemsPerPage;
+  const end = start + state.itemsPerPage;
+  const paginatedJobs = allJobs.slice(start, end);
+
+  let html = `
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Job Title</th>
+            <th>Category</th>
+            <th>Amount (ETH)</th>
+            <th>Client</th>
+            <th>Freelancer</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  paginatedJobs.forEach(job => {
+    const agreedAmountEth = web3.utils.fromWei(job.agreedAmount, "ether");
+    const shortClient = job.client.substring(0, 10) + "...";
+    const shortFreelancer = job.freelancer.substring(0, 10) + "...";
+
+    html += `
+      <tr>
+        <td><strong>${job.title}</strong></td>
+        <td>${job.category}</td>
+        <td>${agreedAmountEth}</td>
+        <td title="${job.client}">${shortClient}</td>
+        <td title="${job.freelancer}">${shortFreelancer}</td>
+        <td>
+          <button class="btn btn-danger btn-small" onclick="resolveDispute(${job.id}, false)">Refund</button>
+          <button class="btn btn-success btn-small" onclick="resolveDispute(${job.id}, true)">Pay</button>
+        </td>
+      </tr>
+    `;
+  });
+
+  html += `
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  // Add pagination controls
+  const totalPages = Math.ceil(state.totalItems / state.itemsPerPage);
+  if (totalPages > 1) {
+    html += createPaginationControls('disputedJobs', state.currentPage, totalPages, 'loadDisputedJobs');
+  }
+
+  container.innerHTML = html;
 }
 
 // Create disputed job card
